@@ -8,11 +8,29 @@ const fs = require("fs");
 let total = 0;
 let count = 0;
 
-const lines = fs.readFileSync("payments.jsonl", "utf8").split("\n").filter((l) => l.length > 0);
+// Only the latest attempt for each txn_id counts.
+const latest = new Map();
+
+const lines = fs.readFileSync("payments.jsonl", "utf8").split(/\r?\n/).filter((l) => l.trim().length > 0);
 for (const line of lines) {
-  const event = JSON.parse(line);
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch {
+    continue; // unreadable line
+  }
+  if (!event || !event.txn_id) continue;
+
+  const prev = latest.get(event.txn_id);
+  if (!prev || Date.parse(event.ts) > Date.parse(prev.ts)) {
+    latest.set(event.txn_id, event);
+  }
+}
+
+for (const event of latest.values()) {
   if (event.status === "success") {
-    total += Number(event.amount);
+    // Some amounts are strings with thousands separators, e.g. "12,345.67".
+    total += Number(String(event.amount).replace(/,/g, ""));
     count += 1;
   }
 }
